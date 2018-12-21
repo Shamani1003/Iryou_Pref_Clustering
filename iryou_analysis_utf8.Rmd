@@ -9,6 +9,7 @@ author: 西山
 今回の分析作業に必要なパッケージを先に読み込んでおく。
 
 ```{r echo=F,warning=TRUE,message=TRUE}
+library(reshape2)
 library(dplyr)
 library(ggplot2)
 library(FactoMineR)
@@ -26,13 +27,13 @@ head(iryou)
 
 ```{r case_name}
 rownames(iryou) <- iryou$Pref
-iryou$Pref <- NULL
+vars <- colnames(iryou)[-1]
 ```
 
 最初にデータの要約をする。量的変量なら最大値と最小値、中央値や平均値を確認しておく。質的変量なら不審なラベルがないかどうかを見ておこう。
 
 ```{r summary}
-summary(iryou)
+summary(iryou[,vars])
 ```
 
 直ちに分かるのは項目間でデータの大きさがかなり違うという点である。主成分はばらつきの大きなデータの影響を受ける。そこでデータをすべて**標準化**して、尺度を共通化しておくのが主成分分析の鉄則である。Ｒコマンダーでは「相関行列を使う」ことで実質的には同じことをしている。
@@ -40,7 +41,7 @@ summary(iryou)
 コマンド"scale"で各列のデータを標準化できるが、そのままではマトリックス型の値になる。後で主成分得点をデータセットに簡単に追加できるようにするため、iryou.stdをデータフレーム型にしている　--- Rコマンダーでデータセットと呼んでいるのはデータフレーム型の値である。
 
 ```{r normalize}
-iryou.std <- as.data.frame(scale(iryou))
+iryou.std <- as.data.frame(scale(iryou[,vars]))
 ```
 
 **標準化**された数値を**標準値**と言う。この標準値は、統計分析で頻繁に使われる物差しになっている。受験でよく使われる**偏差値**も標準値から派生した尺度である。標準化をしてもデータの間の相関関係は変わらない。たとえば、身長と体重には正の相関がある―大きな人は背が高く、体重も重くなる傾向がある。実は、身長と体重を標準化しても相関係数は同じである。桁数の違いが大きいデータは扱いづらい。そんな時、単位を変えて桁数のバランスをとることが多いが、統計分析の場では標準化が最も頻繁にとられる尺度調整法になっている。
@@ -48,8 +49,8 @@ iryou.std <- as.data.frame(scale(iryou))
 実際に、標準化されたデータの平均と分散を求めると、どの項目も平均が0、分散が1になっている。分散が1ということはその平方根である標準偏差も1である。
 
 ```{r normalizedscale}
-apply(iryou.std,2,mean)
-apply(iryou.std,2,var)
+round(apply(iryou.std,2,mean),3)
+round(apply(iryou.std,2,var),3)
 ```
 
 ## 主成分分析
@@ -90,17 +91,21 @@ ggplot(iryou.std, aes(x=PC1,y=PC2)) +
 
 ## クラスター分析
 
+### クラスタリング結果のランダム性
+
 上で得られた二つの主成分（PC1とPC2）に基づいて、都道府県別医療状況のクラスター分析を行う。
 
 OBSの授業「ビジネス統計分析」でも説明したとおり、クラスター分析には非階層型クラスタリングと階層型クラスタリングの二つの方法がある。
 
 ここでは授業を復習する意味合いから、まず非階層型クラスタリングを行う。非階層型クラスタリングで大切な点は、第１にクラスタ数を指定しなければならないこと。第２はクラスターの種として最初にランダムにとられる何個かの点の選び方によって結果として得られるクラスター構成に違いがもたらされる、つまり実行するたびに異なった結果になる可能性があるということである。
 
-### FROM HERE
+都道府県を幾つのクラスターに分けるかだが、散布図をみて自然にクラスター数が見て取れるわけではない。こんな場合は、まずは上下左右に分けてみるという意味合いからクラスター数を４、あるいは３と指定して、その後でクラスターごとの特徴の違いを調べるという手順をとると色々なことが分かることが多い。
 
-
+```{r first_clst, echo=F}
+set.seed(12345)
+```
 ```{r cluster}
-clst<-kmeans(iryou.std[,c("pc1","pc2")],centers=4,iter.max=100)
+clst<-kmeans(iryou.std[,c("PC1","PC2")],centers=4,iter.max=100)
 ```
 
 結果の一覧は次のとおりである。
@@ -114,54 +119,182 @@ length(clst$cluster)
 
 ```{r cluster.plot}
 iryou.std$cluster <- clst$cluster
-p.cluster <- ggplot(iryou.std,aes(x=pc1,y=pc2,col=factor(cluster)))
+p.cluster <- ggplot(iryou.std,aes(x=PC1,y=PC2,color=as.factor(cluster)))
 p.cluster <- p.cluster + geom_point()
-p.cluster <- p.cluster + geom_text(aes(label=Pref,vjust=1))
+p.cluster <- p.cluster + geom_text(aes(label=rownames(iryou.std),vjust=1))
+p.cluster <- p.cluster+xlim(-8.5,8.5)
+p.cluster <- p.cluster+theme_bw()
+plot(p.cluster)
+```
+
+クラスター分析の結果にランダム性が残っていることを確認するため同じクラスタリングをもう一度行ってみる。
+
+```{r second_clst, echo=F}
+set.seed(54321)
+```
+
+```{r cluster_agein}
+clst.again <- kmeans(iryou.std[,c("PC1","PC2")],centers=4,iter.max=100)
+```
+
+２番目のクラスタリングに基づいて散布図を描く。
+
+
+```{r cluster.plot.again}
+iryou.std$cluster.again <- clst.again$cluster
+p.cluster <- ggplot(iryou.std,aes(x=PC1,y=PC2,color=as.factor(cluster.again)))
+p.cluster <- p.cluster + geom_point()
+p.cluster <- p.cluster + geom_text(aes(label=rownames(iryou.std),vjust=1))
+p.cluster <- p.cluster+xlim(-8.5,8.5)
+p.cluster <- p.cluster+theme_bw()
+plot(p.cluster)
+```
+
+１番目と２番目の散布図を見比べると、左上の区域にな東京都と大阪府が、最初のクラスタリングでは同じグループに入っているのに、２番目の散布図では別々のグループに分かれている。
+
+各グループとクラスター番号との対応や散布図におけるクラスター番号の位置取りも二つの散布図で違いがある。
+
+このように一度きりのクラスタリングで４７都道府県のグループ分けを確定するのは問題が残る。また、クラスター数をここではアドホックに４と指定したが、なぜクラスター数は４でなければならないか、その最適性にも説明が必要である。
+
+### 最適なクラスター数
+
+最適なクラスター数を決めるには、クラスター内の分散に着目する。理想的なクラスタリングは、現実には発生しないにせよ、各クラスターの内部においては全て同一の値、クラスター間にのみ違いあるという場合である。したがってクラスター内の分散が小さくなるクラスター数の方がよいと判定するのは自然である。実際、クラスター数を増やしていくと、クラスター内のデータはまとまってくる傾向がある。クラスター内の分散を合計した値が減少する速さに着目して、その減少速度が遅くなる点でクラスター数を決める方式は合理性がある。
+
+更に、クラスター内分散に対するクラスター間分散の比率に着目してもよい。これは**Calinski-Harabasz(CH) Index**である。理想的なクラスタリングにおいては、クラスター内分散がゼロ、クラスター間でのみ分散が残るのでCH指標は無限大になる。通常のケースではなるべくCH指標がピークをとるクラスター数を選べばよい。
+
+まず所要の関数を定義しておく。
+
+```{r def_funcs}
+sqr_edist <- function(x, y){
+  sum((x-y)^2)
+}
+
+wss.cluster <- function(clustermat){
+  c0 <- apply(clustermat, 2, FUN=mean)
+  sum(apply(clustermat, 1, FUN=function(row){sqr_edist(row,c0)}))
+}
+
+wss.total <- function(dmatrix, labels){
+  wsstot <- 0
+  k <- length(unique(labels))
+  for(i in 1:k){
+    wsstot <- wsstot + wss.cluster(subset(dmatrix, labels==i))
+  }
+  wsstot
+}
+
+totss <- function(dmatrix){
+  grandmean <- apply(dmatrix,2,FUN=mean)
+  sum(apply(dmatrix, 1, FUN=function(row){sqr_edist(row, grandmean)}))
+}
+ch_criterion <- function(dmatrix, kmax, method="kmeans"){
+  if(!(method %in% c("kmeans", "hclust"))){
+    stop("method must be one of c('kmeans','hclust')")
+  }
+  npts <- dim(dmatrix)[1] # number of rows
+  totss <- totss(dmatrix)
+  wss <- numeric(kmax)
+  crit <- numeric(kmax)
+  
+  wss[1] <- (npts-1)*sum(apply(dmatrix,2,var))
+  for(k in 2:kmax){
+    if(method=="kmeans"){
+      clustering <- kmeans(dmatrix, k, nstart=10, iter.max = 100)
+      wss[k] <- clustering$tot.withinss
+    } else {
+      d <- dist(dmatrix, method="euclidean")
+      pfit <- hclust(d, method="ward")
+      labels <- cutree(pfit, k=k)
+      wss[k] <- wss.total(dmatrix, labels)
+    }
+  }
+  bss <- totss - wss
+  crit.num <- bss/(0:(kmax-1))
+  crit.denom <- wss/(npts - 1:kmax)
+  crit <- crit.num / crit.denom
+  crit[1] <- NA
+  list(crit=crit, wss=wss, totss=totss)
+}
+```
+
+クラスター数を１個（＝クラスタリングしない）から１０個までに範囲を決め、順に主成分得点"PC1"と"PC2"に基づくkmeans"を実行しよう。このとき、クラスターごとにクラスター内分散とCH Indexを保存する。そうしてから横軸にクラスター数を、縦軸にクラスター内分散、CH Indexをとって折れ線グラフを描く。
+
+```{r manual_calc,message=F, warning=F}
+pcs <- c("PC1", "PC2")
+clustcrit <- ch_criterion(iryou.std[,pcs], 10, method="kmeans")
+critframe <- data.frame(k=1:10, ch=scale(clustcrit$crit), wss=scale(clustcrit$wss))
+critframe2 <- melt(critframe, id.vars = c("k"), variable.name = "measure", value.name = "score")
+ggplot(critframe2, aes(x=k, y=score, color=measure)) +
+  geom_point(aes(shape=measure)) +
+  geom_line(aes(linetype=measure)) +
+  scale_x_continuous(breaks = 1:10, labels = 1:10)
+```
+
+この図をみると、クラスター数を増やすに伴ってクラスター内分散は減少している。一方、CH指標はクラスター数が３の前後でピークを形成している。６個以降はCH指標が上昇しているが、これはクラスター内分散の減少速度が鈍くなる一方でクラスター数の増加によってクラスター間の分散が増えていることよる。
+
+最初に行ったクラスタリングではクラスター数を４としたが、最適なクラスター数としては３のほうが良いと判断できる。
+
+### 安定したクラスタリング結果
+
+上ではクラスタリング結果には常にランダム性が残ることに注意を促した。実際、都道府県の医療状況に着目するとしても、現実に他の都道府県と明確な違いがあり、クラスターを設けることの根拠がある現実のクラスターがある一方で、クラスター数を４と指定したことが原因となって実際には存在しないクラスターが計算上は導かれてくる、そんな見せかけのクラスターもまた得られがちである。実態の伴わないクラスタリングで形成されたグループは安定性に欠け、クラスター分析を行うたびに所属するグループが変わったりする。
+
+パッケージ"fpc"にある"clusterboot"は何度も反復して計算をおこない最終的に安定したクラスタリングを返してくれるので大変便利である。
+
+ここではクラスタリングを100回反復して各グループの安定性をみてみる。
+
+```{r clustboot, message=F, results='hide'}
+cboot <- clusterboot(iryou.std[,c("PC1","PC2")], clustermethod = kmeansCBI, krange=3:4)
+```
+最数的に確定できたグループを表示させよう。
+
+```{r disp_final_cluster}
+group <- cboot$result$partition
+for(i in 1:3){
+  print(paste("cluster", i))
+  print(iryou$Pref[group==i])
+}
+```
+
+これらのグループはクラスター計算のたびにどの程度安定して同じ構成員と組み合わされたのだろうか。
+
+```{r look_stability_clustering}
+cboot$bootmean
+```
+
+表示された数値は、いわゆる"Jaccard Coefficient"（ジャッカード係数)を100回にわたるクラスタリング計算を通して平均した値であって、ある回のクラスター計算による構成メンバーが別の回の構成メンバーとどの程度まで共通しているかという指標の平均値である。当然ながら、クラスター計算によらず同じ構成員が含まれるグループは安定性が高いわけである。上の数値をみると、どれも７５％を超えており、十分な安定性を有している。クラスターの安定性を示す平均ジャッカード係数が0.5未満になる場合は、そのクラスターに実質的な意味はないと判断される。
+
+上の結果に基づいて層別化された散布図にしてみる。
+
+```{r scatter_final}
+iryou.std$cluster.final <- cboot$result$partition
+p.cluster <- ggplot(iryou.std,aes(x=PC1,y=PC2,color=as.factor(cluster.final)))
+p.cluster <- p.cluster + geom_point()
+p.cluster <- p.cluster + geom_text(aes(label=rownames(iryou.std),vjust=1))
 p.cluster <- p.cluster+xlim(-8.5,8.5)
 p.cluster <- p.cluster+theme_bw()
 plot(p.cluster)
 ```
 
 
-### （留意点）
+
+<!-- ### （留意点）
 
 上のクラスター分析から得られたクラスター別散布図は、おそらく履修者の皆がRコマンダーを用いて得たグラフとは違っていると予想する。つまり、散布図全体の形は同じであるものの、どの都道府県をどのグループに入れるかというクラスタリングが違う。そうなっているのではなかろうか。
 
 参考までに西山がRコマンダーの主成分分析・クラスター分析から得た散布図を示しておく。Rが自動的につけるクラスター番号の違いに注意せよ。
 
 ![By R-Commander](iryou_plot_cluster.png)
+-->
 
-Rコマンダーで繰り返し数を最大30にした時のクラスター１のメンバーは山口県、徳島県、高知県、佐賀県、鹿児島県の５県だった。他方、コマンドで分析し最大繰り返し数を100にした時には、更に複数の県が同じクラスターに加えられることが多い。
+# 各クラスターのプロファイル分析
 
-クラスター分析は（主成分分析とは違って）反復計算を通して収束解（＝これ以上動かぬ結果）を探す技法である。そのため、何回で計算を打ち切るかで違いが出る。更に、クラスター分析では最初にランダムに幾つかの都道府県をとって、これと近いデータを順にまとめていく技法である。従って、ランダムにとる初期値が異なるとその後のクラスタリングも変わってしまう。―こうした点がクラスター分析の（大きな）欠点として挙げられることは多い。
+今回のクラスター分析の結果に基づき、各クラスターの特徴づけを行っておこう。特徴づけは標準値ではなく元データのほうが見やすいので、元のデータセット"iryou"に確定したクラスター番号を追加しておく。
 
-このような弱みがある一方で、得られたクラスターの特徴（＝プロファイル）を比べると、結局は同じ違いが引き出されていることに気がつくはずである。違いをまとめる便利な技術として、最近よく利用されるようになった。その位の気持ちで使っていくのが良い使い方だと思われる。
-
-常に同じ解が得られないという点は、実はクラスター分析だけに言えることではなく、後で登場する分析ツールにも同様の性質をもったものがある。
-
-計算のつど結果が大きく変わるのはビジネスツールとしては使いにくい。そのためRのパッケージの中では"ykmeans"がクラスタリングのツールとしては利用されているようである―パッケージのインストールはRコマンダーと同じ。これは（例えば）通常のクラスタリングを100回行い、その中から頻度の最も高い結果を採用する方法である。
-
-さて、本論に戻る。
-
-今回のクラスター分析の結果に基づき、各クラスターの特徴づけを行っておこう。特徴づけは標準値ではなく元データのほうが見やすいので、データセット"iryou"にクラスター番号を追加しておく。
-
-```{r origdata_cluster}
-iryou$cluster <- clst$cluster
-colnames(iryou)
+```{r add_cluster_iryou}
+iryou$cluster <- iryou.std$cluster.final
 ```
 
-この資料では、コマンド利用によっているが特に層別化した統計量（特に平均値やメディアン）を出す作業ではRコマンダーを利用するほうが簡単だろうと思われる。
-
-念のため、クラスター化したそれぞれのグループにどんな都道府県がメンバーとして含まれているかを表示しておこう。
-
-```{r group_menber}
-split(iryou$Pref,factor(iryou$cluster))
-```
-
-以下、クラスタリングが異なることを承知の上で、個別項目についてクラスター別平均値を見ていく。クラスターごとの特徴づけになると、Rコマンダーによる結果と大きな違いはなくなってくる（はずである）。実際、第１主成分・第２主成分の散布図全体としては同じであり、それをどう四つに分けるかという分け方は、基本的に同じポジショニングになっている。
-
-
-# 医療施設、医師、看護師等の数
+## 医療施設、医師、看護師等の数
 
 * D1: 一般病院数（10万人当たり）
 
@@ -211,9 +344,9 @@ iryou %>% group_by(cluster) %>% summarise(avgD7=mean(D7))
 iryou %>% group_by(cluster) %>% summarise(avgD8=mean(D8))
 ```
 
-### 医療サービスの供給サイドについては、全体として高知・山口など地方圏から構成されるクラスターの充実が見てとれる。反対に東京など大都市圏クラスターでは水準が低い。
+#### 医療サービスの供給サイドに関する情報が多いが、全体として高知・山口など地方圏から構成されるクラスターの充実が見てとれる。反対に東京など大都市圏クラスターでは人口当たりの医療施設、医師数、看護師数が相対的に低い。
 
-# 患者数、利用率等
+## 患者数、利用率等
 
 * D9: 一般病院外来患者数（常勤医師1人1日当たり）
 
@@ -251,9 +384,9 @@ iryou %>% group_by(cluster) %>% summarise(avgD13=mean(D13))
 iryou %>% group_by(cluster) %>% summarise(avgD14=mean(D14))
 ```
 
-### 需要サイドのうち、外来患者数は青森・秋田など主として寒冷地から構成されるクラスターが多い。他方、在院患者数、平均在院日数、新入院患者数などについては高知・山口など地方圏から構成されるクラスターの水準が高い。東京など大都市圏クラスターでは平均在院日数が短いなど予想通りの結果がみられる。
+#### 需要サイドの情報が多い。医師、看護師一人当たりの患者数、入院患者数をみると、大都市圏のほうが地方圏より少ない。即ち、地方圏は医療施設の供給水準は高いが、医療関係者一人当たりの患者数が多い傾向がある。これは地方圏のほうが大都市圏より高齢化が進行していることの現れである可能性もある -- 但し、平均年齢に関する情報が今回のデータには含まれていないので直ちに確認はできない。医師一人当たりの外来患者数は青森・秋田など主として寒冷地から構成されるクラスターで多い。東京など大都市圏クラスターでは平均在院日数が短いなど予想通りの結果がみられる。
 
-# 病因別死亡率等
+## 病因別死亡率等
 
 * D15: 標準化死亡率（千人当たり）
 
@@ -303,7 +436,7 @@ iryou %>% group_by(cluster) %>% summarise(avgD21=mean(D21))
 iryou %>% group_by(cluster) %>% summarise(avgD22=mean(D22))
 ```
 
-### 各病因を通して、青森・秋田等の寒冷地クラスターと高知・山口島の地方圏クラスターの相対的な高さがみてとれる。
+#### 病院別の死亡率に関するデータである。挙げるべき点を列挙すると、大都市圏の人口当たり死亡者数が相対的に少ない。これも高齢化の進行状況が反映していると推測できる。また各病因について東北・北陸クラスターの死亡率が高く、全体的な標準化死亡率の相対的高さにつながっている。
 
-### この資料では四つのクラスターに分けたが、中途半端な分け方になっている印象もある。クラスター数を３、例えば上の結果をみれば「大都市クラスター」、「地方圏クラスター」、「東北・北陸クラスター」で医療状況をグループ分けするのが適切かもしれない。作業は自習課題とし、ここでは省略する。『どちらのクラスター分けが正しいのか』という問いかけよりも、分けた時に見てとれる違いは「役に立つ違いか」を考えるべし。
+### 第１クラスターは「地方圏」、第２クラスターは「大都市型グループ」、第３クラスターは「東北・北陸ブロック」と呼べるかもしれない。限定された医療関係データによっても、これらの三つのクラスターが実際に都道府県の間の違いとして浮き彫りにされていることは興味深い。もちろん、これらの違いには違いをもたらす要因があるはずであり、これらを掘り下げていくことが今回の分析から得られるメッセージであろう。
 
